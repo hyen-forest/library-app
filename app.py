@@ -9,6 +9,7 @@ BASE_URL = "https://lib.changwon.go.kr"
 
 def get_call_number(book_name):
     try:
+        # 1️⃣ 검색 요청
         params = {
             "lib_code": "cl",
             "search_keyword": book_name,
@@ -18,32 +19,38 @@ def get_call_number(book_name):
         res = requests.get(BASE_SEARCH_URL, params=params)
         soup = BeautifulSoup(res.text, "html.parser")
 
-        link_tag = soup.select_one("a[href*='dataView']")
-        if not link_tag:
+        # 2️⃣ 도서 상세 링크들 가져오기
+        links = soup.select("a[href*='dataView']")
+
+        if not links:
             return "검색 결과 없음"
 
-        detail_url = BASE_URL + link_tag["href"]
+        # 3️⃣ 첫 번째 도서 링크 선택
+        detail_url = BASE_URL + links[0]["href"]
 
+        # 4️⃣ 상세 페이지 요청
         detail_res = requests.get(detail_url)
         detail_soup = BeautifulSoup(detail_res.text, "html.parser")
 
+        # 5️⃣ 청구기호 찾기 (강화 버전)
         rows = detail_soup.select("table tr")
 
         for row in rows:
-            th = row.find("th")
-            td = row.find("td")
-
-            if th and "청구기호" in th.text:
-                return td.text.strip()
+            if "청구기호" in row.text:
+                td = row.find("td")
+                if td:
+                    return td.text.strip()
 
         return "청구기호 없음"
 
     except Exception as e:
         return f"오류: {str(e)}"
 
+
 @app.route("/")
 def home():
     return render_template("index.html")
+
 
 @app.route("/search", methods=["POST"])
 def search():
@@ -60,3 +67,7 @@ def search():
         })
 
     return jsonify(results)
+
+
+if __name__ == "__main__":
+    app.run()
