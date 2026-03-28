@@ -1,56 +1,62 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>도서관 청구기호 조회</title>
-</head>
-<body>
+from flask import Flask, render_template, request, jsonify
+import requests
+from bs4 import BeautifulSoup
 
-<h2>책 제목 입력</h2>
+app = Flask(__name__)
 
-<textarea id="books" rows="10" cols="50"></textarea><br><br>
+BASE_SEARCH_URL = "https://lib.changwon.go.kr/book/search.php"
+BASE_URL = "https://lib.changwon.go.kr"
 
-<button onclick="searchBooks()">검색</button>
+def get_call_number(book_name):
+    try:
+        params = {
+            "lib_code": "cl",
+            "search_keyword": book_name,
+            "search_type": "detail"
+        }
 
-<h3>결과</h3>
-<table border="1">
-    <thead>
-        <tr>
-            <th>책 제목</th>
-            <th>청구기호</th>
-        </tr>
-    </thead>
-    <tbody id="result"></tbody>
-</table>
+        res = requests.get(BASE_SEARCH_URL, params=params)
+        soup = BeautifulSoup(res.text, "html.parser")
 
-<script>
-async function searchBooks() {
-    const books = document.getElementById("books").value
-        .split("\n")
-        .map(b => b.trim())
-        .filter(b => b !== "");
+        link_tag = soup.select_one("a[href*='dataView']")
+        if not link_tag:
+            return "검색 결과 없음"
 
-    const res = await fetch("/search", {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ books })
-    });
+        detail_url = BASE_URL + link_tag["href"]
 
-    const data = await res.json();
+        detail_res = requests.get(detail_url)
+        detail_soup = BeautifulSoup(detail_res.text, "html.parser")
 
-    const resultTable = document.getElementById("result");
-    resultTable.innerHTML = "";
+        rows = detail_soup.select("table tr")
 
-    data.forEach(item => {
-        const row = `<tr>
-            <td>${item.book}</td>
-            <td>${item.call_number}</td>
-        </tr>`;
-        resultTable.innerHTML += row;
-    });
-}
-</script>
+        for row in rows:
+            th = row.find("th")
+            td = row.find("td")
 
-</body>
-</html>
+            if th and "청구기호" in th.text:
+                return td.text.strip()
+
+        return "청구기호 없음"
+
+    except Exception as e:
+        return f"오류: {str(e)}"
+
+@app.route("/")
+def home():
+    return render_template("index.html")
+
+@app.route("/search", methods=["POST"])
+def search():
+    data = request.json
+    books = data.get("books", [])
+
+    results = []
+
+    for book in books:
+        call_number = get_call_number(book)
+        results.append({
+            "book": book,
+            "call_number": call_number
+        })
+
+    return jsonify(results)
